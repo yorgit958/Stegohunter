@@ -1,23 +1,6 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: stego_postgres
-    environment:
-      POSTGRES_USER: stego_user
-      POSTGRES_PASSWORD: stego_password
-      POSTGRES_DB: stego_db
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U stego_user -d stego_db" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   redis:
     image: redis:7-alpine
     container_name: stego_redis
@@ -51,7 +34,6 @@ services:
       retries: 5
 
 volumes:
-  postgres_data:
   redis_data:
   minio_data:
 
