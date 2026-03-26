@@ -33,9 +33,90 @@ services:
       timeout: 5s
       retries: 5
 
+  gateway-service:
+    build:
+      context: ./gateway-service
+    container_name: stego_gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - MINIO_URL=minio:9000
+      - MINIO_ACCESS_KEY=admin
+      - MINIO_SECRET_KEY=password123
+      - IMAGE_ANALYSIS_URL=http://image-analysis-service:8000
+      - DNN_DEFENSE_URL=http://dnn-defense-service:8000
+      - NEUTRALIZATION_URL=http://neutralization-service:8000
+      - ORCHESTRATION_URL=http://orchestration-service:8000
+      - NOTIFICATION_URL=http://notification-service:8000
+    depends_on:
+      - redis
+      - minio
+
+  image-analysis-service:
+    build:
+      context: ./image-analysis-service
+    container_name: stego_image_analysis
+    ports:
+      - "8001:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - MINIO_URL=minio:9000
+      - MINIO_ACCESS_KEY=admin
+      - MINIO_SECRET_KEY=password123
+    depends_on:
+      - minio
+
+  dnn-defense-service:
+    build:
+      context: ./dnn-defense-service
+    container_name: stego_dnn_defense
+    ports:
+      - "8002:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
+  neutralization-service:
+    build:
+      context: ./neutralization-service
+    container_name: stego_neutralization
+    ports:
+      - "8003:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - MINIO_URL=minio:9000
+      - MINIO_ACCESS_KEY=admin
+      - MINIO_SECRET_KEY=password123
+    depends_on:
+      - minio
+
+  orchestration-service:
+    build:
+      context: ./orchestration-service
+    container_name: stego_orchestration
+    ports:
+      - "8004:8000"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - MINIO_URL=minio:9000
+    depends_on:
+      - redis
+      - minio
+
+  notification-service:
+    build:
+      context: ./notification-service
+    container_name: stego_notification
+    ports:
+      - "8005:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
 volumes:
   redis_data:
   minio_data:
-
-    # Note: The microservices (gateway, image-analysis, etc.) will be added here
-    # once their Dockerfiles and base code are ready.
