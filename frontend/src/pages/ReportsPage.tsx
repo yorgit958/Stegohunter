@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
     Table,
     TableBody,
@@ -134,8 +135,20 @@ export default function ReportsPage() {
                                                 : <span className="text-muted-foreground">—</span>
                                             }
                                         </TableCell>
-                                        <TableCell className="text-right text-xs text-muted-foreground">
+                                        <TableCell className="text-right text-xs text-muted-foreground flex items-center justify-end gap-3">
                                             {new Date(scan.created_at).toLocaleString()}
+                                            <Button 
+                                                variant="ghost" 
+                                                size="icon" 
+                                                className="h-8 w-8 hover:bg-primary/20 text-primary"
+                                                title="Download PDF Report"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    import("../lib/api").then(m => m.reportApi.downloadScanPdf(scan.id));
+                                                }}
+                                            >
+                                                <FileText className="w-4 h-4" />
+                                            </Button>
                                         </TableCell>
                                     </TableRow>
                                 ))}

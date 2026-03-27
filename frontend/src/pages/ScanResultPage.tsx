@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
-import { scanApi } from '../lib/api';
+import { scanApi, reportApi } from '../lib/api';
 import { 
   ShieldCheck, ShieldAlert, ShieldX, AlertTriangle, 
-  ArrowLeft, FileImage, Shield, Cpu, Clock, Activity 
+  ArrowLeft, FileImage, Shield, Cpu, Clock, Activity, FileText 
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 
@@ -96,13 +96,29 @@ const ScanResultPage = () => {
           </Button>
           <h1 className="text-2xl font-bold text-white">Analysis Report</h1>
         </div>
-        
-        {isThreat && (
-          <Button onClick={() => navigate(`/neutralize?jobId=${job.id}`, { state: { file: routerFile } })} className="bg-red-600 hover:bg-red-700 text-white shadow-[0_0_15px_rgba(220,38,38,0.4)]">
-            <Shield className="w-4 h-4 mr-2" />
-            Neutralize Payload
+        <div className="flex items-center gap-3">
+          <Button 
+            onClick={async () => {
+              try {
+                await reportApi.downloadScanPdf(job.id);
+              } catch(err) {
+                console.error("PDF Download failed", err);
+              }
+            }} 
+            variant="outline" 
+            className="border-primary/50 text-white hover:bg-primary/20 bg-primary/10 shadow-[0_0_10px_rgba(59,130,246,0.2)]"
+          >
+            <FileText className="w-4 h-4 mr-2 text-primary" />
+            Export Report
           </Button>
-        )}
+
+          {isThreat && (
+            <Button onClick={() => navigate(`/neutralize?jobId=${job.id}`, { state: { file: routerFile } })} className="bg-red-600 hover:bg-red-700 text-white shadow-[0_0_15px_rgba(220,38,38,0.4)]">
+              <Shield className="w-4 h-4 mr-2" />
+              Neutralize Payload
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
