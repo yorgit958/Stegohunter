@@ -105,6 +105,12 @@ export const scanApi = {
         return response.data;
     },
 
+    // Extract LSB payload by job ID (no re-upload needed — pulls from MinIO)
+    extractPayloadByJobId: async (jobId: string) => {
+        const response = await api.get(`/scan/extract/${jobId}`);
+        return response.data;
+    },
+
     downloadImage: async (jobId: string) => {
         const response = await api.get(`/scan/jobs/${jobId}/download`, {
             responseType: 'blob'
@@ -153,4 +159,22 @@ export const adminApi = {
         });
         return response.data;
     },
+};
+
+// Report API Endpoints
+export const reportApi = {
+    downloadScanPdf: async (jobId: string) => {
+        const response = await api.get(`/reports/pdf/${jobId}`, {
+            responseType: 'blob'
+        });
+        
+        // Trigger native browser download
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `StegoHunter_Report_${jobId.substring(0,8)}.pdf`);
+        document.body.appendChild(link);
+        link.click();
+        link.parentNode?.removeChild(link);
+    }
 };

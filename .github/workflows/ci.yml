@@ -1,0 +1,60 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ─── Frontend: Lint, Type-check, Build ───
+  frontend:
+    name: Frontend CI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build (type-check + bundle)
+        run: npm run build
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'http://localhost:8000/api/v1' }}
+          VITE_WS_URL: ${{ vars.VITE_WS_URL || 'ws://localhost:8005' }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+  # ─── Backend: Validate Docker builds ───
+  backend:
+    name: Backend Docker Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Gateway Service
+        run: docker build -t stego-gateway ./gateway-service
+
+      - name: Build Image Analysis Service
+        run: docker build -t stego-image-analysis ./image-analysis-service
+
+      - name: Build Notification Service
+        run: docker build -t stego-notification ./notification-service
+
+      - name: Build Neutralization Service
+        run: docker build -t stego-neutralization ./neutralization-service

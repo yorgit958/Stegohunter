@@ -6,6 +6,7 @@ import {
   ArrowLeft, FileImage, Shield, Cpu, Clock, Activity, FileText 
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import PayloadExtractor from '../components/PayloadExtractor';
 
 const ScanResultPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -235,60 +236,20 @@ const ScanResultPage = () => {
                 The final confidence score ({scorePercent}%) represents a True-Positive Max Confidence. Instead of watering down detections with a plain average, the engine identifies the highest probability of tampering across all spatial, frequency, and Deep Learning nodes. A single critical hit above 65% flags the file.
               </p>
               
-              {/* LSB Extraction Tool */}
+            {/* LSB Extraction Tool */}
               <div className="mt-4 pt-4 border-t border-primary/20">
                 <h4 className="text-white font-medium mb-2 flex items-center gap-2">
                   <Cpu className="w-4 h-4 text-purple-400" />
                   Payload Extractor
                 </h4>
-                <p className="text-white/50 text-xs mb-3">Attempt to chronologically scrape standard ASCII text from the Least Significant Bit layer.</p>
+                <p className="text-white/50 text-xs mb-3">
+                  {isThreat 
+                    ? "Threat detected — automatically extracting hidden payload from the scanned image."
+                    : "Attempt to scrape standard ASCII text from the Least Significant Bit layer."
+                  }
+                </p>
                 
-                <div className="bg-black/40 rounded p-3 border border-white/5 relative">
-                  <input 
-                    type="file" 
-                    id="extract-file" 
-                    className="hidden" 
-                    accept="image/*"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      try {
-                        const evt = e.target as HTMLInputElement;
-                        evt.disabled = true;
-                        
-                        const label = document.getElementById('extract-label');
-                        if (label) label.innerText = "Extracting Bits...";
-                        
-                        const res = await scanApi.extractPayload(file);
-                        
-                        const output = document.getElementById('payload-output');
-                        if (output) {
-                          output.innerText = res.extracted_payload || "No payload decoded.";
-                          output.classList.remove('hidden');
-                        }
-                        
-                        if (label) label.innerText = "Re-Upload Image to Extract";
-                        evt.disabled = false;
-                      } catch (err: any) {
-                        const label = document.getElementById('extract-label');
-                        if (label) label.innerText = "Extraction Failed. Try Again.";
-                        const evt = e.target as HTMLInputElement;
-                        evt.disabled = false;
-                      }
-                    }}
-                  />
-                  <label 
-                    htmlFor="extract-file" 
-                    id="extract-label"
-                    className="inline-block bg-white/10 hover:bg-white/20 text-white text-sm py-1.5 px-3 rounded cursor-pointer transition-colors mb-3"
-                  >
-                    Upload Image to Extract Payload
-                  </label>
-                  
-                  <div id="payload-output" className="hidden mt-2 p-3 bg-black text-green-400 font-mono text-xs rounded border border-green-500/20 max-h-[150px] overflow-y-auto break-all">
-                    {/* Decoded content drops here */}
-                  </div>
-                </div>
+                <PayloadExtractor jobId={job.id} autoExtract={isThreat} />
               </div>
             </div>
           </div>

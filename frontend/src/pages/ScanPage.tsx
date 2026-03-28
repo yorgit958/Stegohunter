@@ -8,6 +8,7 @@ import { ShieldCheck, AlertTriangle } from 'lucide-react';
 const ScanPage = () => {
   const [file, setFile] = useState<File | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanJobId, setScanJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   
   const navigate = useNavigate();
@@ -20,9 +21,14 @@ const ScanPage = () => {
     try {
       const result = await scanApi.uploadImage(selectedFile);
       
-      if (result.status === 'completed' && result.scan_job_id) {
-        // Navigate to the results page carrying the file in memory
-        navigate(`/scan/results/${result.scan_job_id}`, { state: { file: selectedFile } });
+      if (result.scan_job_id) {
+        setScanJobId(result.scan_job_id);
+        
+        // If the backend returned synchronously (legacy), navigate immediately
+        if (result.status === 'completed') {
+          navigate(`/scan/results/${result.scan_job_id}`, { state: { file: selectedFile } });
+        }
+        // Otherwise, the WebSocket in ScanProgress will handle navigation on completion
       } else {
         throw new Error(result.message || "Failed to process image");
       }
@@ -31,7 +37,19 @@ const ScanPage = () => {
       setError(err.response?.data?.detail || err.message || "An unexpected error occurred during analysis.");
       setIsScanning(false);
       setFile(null);
+      setScanJobId(null);
     }
+  };
+
+  const handleScanComplete = (jobId: string) => {
+    navigate(`/scan/results/${jobId}`, { state: { file } });
+  };
+
+  const handleScanError = (errorMsg: string) => {
+    setError(errorMsg);
+    setIsScanning(false);
+    setFile(null);
+    setScanJobId(null);
   };
 
   return (
@@ -58,7 +76,12 @@ const ScanPage = () => {
         )}
 
         {isScanning ? (
-          <ScanProgress fileName={file?.name || "Suspicious Image.png"} />
+          <ScanProgress 
+            fileName={file?.name || "Suspicious Image.png"} 
+            scanJobId={scanJobId}
+            onComplete={handleScanComplete}
+            onError={handleScanError}
+          />
         ) : (
           <ScanUploader onFileSelect={handleFileSelect} isLoading={false} />
         )}

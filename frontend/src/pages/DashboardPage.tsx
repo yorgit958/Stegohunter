@@ -162,7 +162,7 @@ export default function DashboardPage() {
                                                 <TableCell className="font-medium text-xs text-white max-w-[150px] truncate" title={scan.file_name}>
                                                     {scan.file_name}
                                                 </TableCell>
-                                                <TableCell><StatusBadge status={scan.status} /></TableCell>
+                                                <TableCell><StatusBadge status={scan.status} isStego={scan.is_stego} /></TableCell>
                                                 <TableCell className="text-right text-xs text-muted-foreground">{formatTimeAgo(scan.created_at)}</TableCell>
                                             </TableRow>
                                         );
