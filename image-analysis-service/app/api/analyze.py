@@ -32,10 +32,13 @@ async def extract_lsb_payload(
     if image is None:
         raise HTTPException(status_code=400, detail="Could not decode image file")
 
-    from app.engines.lsb_extractor import LSBExtractor
-    payload = LSBExtractor.extract_ascii(image, file_bytes=file_bytes)
-    
-    return {"status": "success", "extracted_payload": payload}
+    try:
+        from app.engines.lsb_extractor import LSBExtractor
+        payload = LSBExtractor.extract_ascii(image, file_bytes=file_bytes)
+        return {"status": "success", "extracted_payload": payload}
+    except Exception as e:
+        import traceback
+        return {"status": "error", "extracted_payload": f"Extraction engine error: {str(e)}", "trace": traceback.format_exc()}
 
 @router.post("/analyze", response_model=AnalysisResponse)
 async def analyze_image(

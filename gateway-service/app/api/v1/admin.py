@@ -227,7 +227,7 @@ async def check_services_health(user_id: str = Depends(_verify_admin)):
             if name == "gateway":
                 continue
             try:
-                resp = await client.get(f"{info['url']}/health")
+                resp = await client.get(f"{info['url']}/")
                 services[name]["status"] = "online" if resp.status_code == 200 else "degraded"
             except Exception:
                 services[name]["status"] = "offline"

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.supabase_client import supabase_client
-from app.api.v1 import auth, scan, neutralize, dnn, admin
+from app.api.v1 import auth, scan, neutralize, dnn, admin, reports
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -12,7 +12,14 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080", "http://localhost:5173", "http://127.0.0.1:8080", "http://127.0.0.1:5173"],
+    allow_origins=[
+        "http://localhost:8080",
+        "http://localhost:5173",
+        "http://127.0.0.1:8080",
+        "http://127.0.0.1:5173",
+        "https://stegohunter.vercel.app",
+    ],
+    allow_origin_regex=r"https://.*\.(vercel\.app|trycloudflare\.com)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -23,6 +30,7 @@ app.include_router(scan.router, prefix="/api/v1")
 app.include_router(neutralize.router, prefix="/api/v1")
 app.include_router(dnn.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
+app.include_router(reports.router, prefix="/api/v1")
 
 @app.get("/")
 def read_root():

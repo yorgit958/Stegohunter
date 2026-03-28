@@ -39,6 +39,8 @@ services:
     container_name: stego_gateway
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
       - MINIO_URL=minio:9000
@@ -59,6 +61,8 @@ services:
     container_name: stego_image_analysis
     ports:
       - "8001:8000"
+    env_file:
+      - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
       - MINIO_URL=minio:9000
@@ -73,6 +77,8 @@ services:
     container_name: stego_dnn_defense
     ports:
       - "8002:8000"
+    env_file:
+      - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
     depends_on:
@@ -84,6 +90,8 @@ services:
     container_name: stego_neutralization
     ports:
       - "8003:8000"
+    env_file:
+      - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
       - MINIO_URL=minio:9000
@@ -98,10 +106,14 @@ services:
     container_name: stego_orchestration
     ports:
       - "8004:8000"
+    env_file:
+      - .env
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - MINIO_URL=minio:9000
+      - MINIO_ACCESS_KEY=admin
+      - MINIO_SECRET_KEY=password123
     depends_on:
       - redis
       - minio
@@ -112,6 +124,8 @@ services:
     container_name: stego_notification
     ports:
       - "8005:8000"
+    env_file:
+      - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
     depends_on:

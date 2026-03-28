@@ -1,8 +1,9 @@
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Query, BackgroundTasks
 from typing import Optional
 import os
 import hashlib
 import httpx
+import json
 
 from app.api.dependencies import verify_token
 from app.core.config import settings
@@ -13,20 +14,126 @@ from fastapi.responses import Response
 router = APIRouter(prefix="/scan", tags=["Scanning"])
 
 
+async def publish_scan_event(user_id: str, scan_job_id: str, step: str, step_index: int, status: str = "in_progress", result: dict = None):
+    """Publish a scan progress event to Redis PubSub for WebSocket delivery."""
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        event = {
+            "type": "scan_progress",
+            "user_id": user_id,
+            "scan_job_id": scan_job_id,
+            "step": step,
+            "step_index": step_index,
+            "status": status,
+        }
+        if result:
+            event["result"] = result
+        await r.publish("scan_events", json.dumps(event))
+        await r.aclose()
+    except Exception as e:
+        print(f"[Redis Publish] Error: {e}")
+
+
+async def run_scan_pipeline(user_id: str, scan_job_id: str, file_name: str, file_bytes: bytes, mime_type: str):
+    """
+    Background task that executes the full scan pipeline:
+    1. Upload to MinIO
+    2. Forward to Image Analysis Service
+    3. Store results in Supabase
+    4. Update job status
+    Each step publishes progress to Redis for real-time WebSocket updates.
+    """
+    try:
+        # Step 1: Upload to MinIO
+        await publish_scan_event(user_id, scan_job_id, "Uploading to secure storage", 0)
+        object_name = f"{scan_job_id}_{file_name}"
+        upload_file_bytes("originals", object_name, file_bytes, mime_type)
+
+        # Step 2: Forward to Image Analysis Service
+        await publish_scan_event(user_id, scan_job_id, "Running AI analysis engines", 1)
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{settings.IMAGE_ANALYSIS_URL}/api/analyze",
+                files={"file": (file_name, file_bytes, mime_type)},
+            )
+
+            if response.status_code != 200:
+                service_client.table("scan_jobs").update({
+                    "status": "failed",
+                    "error_message": f"Analysis service returned {response.status_code}",
+                }).eq("id", scan_job_id).execute()
+                await publish_scan_event(user_id, scan_job_id, "Analysis failed", 1, status="error")
+                return
+
+            analysis_result = response.json()
+
+        # Step 3: Store results
+        await publish_scan_event(user_id, scan_job_id, "Storing analysis results", 2)
+        result_data = {
+            "scan_job_id": scan_job_id,
+            "is_stego": analysis_result.get("is_stego", False),
+            "confidence": analysis_result.get("confidence", 0.0),
+            "threat_level": analysis_result.get("threat_level", "none"),
+            "detection_methods": {
+                "engines": analysis_result.get("engine_results", []),
+                "methods_triggered": analysis_result.get("detection_methods", []),
+            },
+            "metadata": {
+                "ensemble_score": analysis_result.get("ensemble_score", 0.0),
+                "threshold": analysis_result.get("threshold", 0.65),
+                "image_info": analysis_result.get("image_info", {}),
+            },
+        }
+
+        try:
+            service_client.table("scan_results").insert(result_data).execute()
+        except Exception as e:
+            print(f"Warning: Could not store scan results: {e}")
+
+        # Step 4: Update job status to completed
+        await publish_scan_event(user_id, scan_job_id, "Finalizing report", 3)
+        service_client.table("scan_jobs").update({
+            "status": "completed",
+            "completed_at": "now()",
+        }).eq("id", scan_job_id).execute()
+
+        # Step 5: Push completion event with summary
+        await publish_scan_event(user_id, scan_job_id, "Scan complete", 4, status="completed", result={
+            "is_stego": analysis_result.get("is_stego", False),
+            "threat_level": analysis_result.get("threat_level", "none"),
+            "confidence": analysis_result.get("confidence", 0.0),
+        })
+
+    except httpx.ConnectError:
+        service_client.table("scan_jobs").update({
+            "status": "failed",
+            "error_message": "Could not connect to Image Analysis Service",
+        }).eq("id", scan_job_id).execute()
+        await publish_scan_event(user_id, scan_job_id, "Connection failed", 0, status="error")
+
+    except Exception as e:
+        service_client.table("scan_jobs").update({
+            "status": "failed",
+            "error_message": str(e),
+        }).eq("id", scan_job_id).execute()
+        await publish_scan_event(user_id, scan_job_id, f"Error: {str(e)[:100]}", 0, status="error")
+
+
 @router.post("")
 @router.post("/")
 async def submit_scan(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     user_id: str = Depends(verify_token),
 ):
     """
-    End-to-end scan pipeline:
-    1. Read and validate the uploaded file
+    Non-blocking scan pipeline:
+    1. Validate the uploaded file
     2. Create a scan_job record in Supabase (status='analyzing')
-    3. Forward the file to the Image Analysis Service
-    4. Store the results in scan_results table
-    5. Update scan_job status to 'completed'
-    6. Return full results to the client
+    3. Instantly return the scan_job_id to the frontend
+    4. Execute the heavy AI analysis in the background
+    5. Push real-time progress to the user via Redis → WebSocket
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
@@ -47,11 +154,9 @@ async def submit_scan(
 
     # Calculate file hash
     file_hash = hashlib.sha256(file_bytes).hexdigest()
-
-    # Determine MIME type
     mime_type = file.content_type or "application/octet-stream"
 
-    # --- Step 1: Create scan_job in Supabase ---
+    # Create scan_job in Supabase immediately
     try:
         job_response = service_client.table("scan_jobs").insert({
             "user_id": user_id,
@@ -72,86 +177,20 @@ async def submit_scan(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-    # --- Step 1.5: Upload original file to MinIO ---
-    object_name = f"{scan_job_id}_{file.filename}"
-    upload_success = upload_file_bytes("originals", object_name, file_bytes, mime_type)
-    if not upload_success:
-        print(f"Warning: Failed to upload {object_name} to MinIO.")
+    # Enqueue the heavy pipeline as a background task
+    background_tasks.add_task(
+        run_scan_pipeline,
+        user_id, scan_job_id, file.filename, file_bytes, mime_type
+    )
 
-    # --- Step 2: Forward to Image Analysis Service ---
-    try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{settings.IMAGE_ANALYSIS_URL}/api/analyze",
-                files={"file": (file.filename, file_bytes, mime_type)},
-            )
-
-            if response.status_code != 200:
-                # Update scan_job status to 'failed'
-                service_client.table("scan_jobs").update({
-                    "status": "failed",
-                    "error_message": f"Analysis service returned {response.status_code}",
-                }).eq("id", scan_job_id).execute()
-
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Image Analysis Service error: {response.text}",
-                )
-
-            analysis_result = response.json()
-
-    except httpx.ConnectError:
-        service_client.table("scan_jobs").update({
-            "status": "failed",
-            "error_message": "Could not connect to Image Analysis Service",
-        }).eq("id", scan_job_id).execute()
-
-        raise HTTPException(
-            status_code=503,
-            detail="Image Analysis Service is unavailable. Ensure it's running on port 8001.",
-        )
-
-    # --- Step 3: Store results in scan_results ---
-    try:
-        result_data = {
-            "scan_job_id": scan_job_id,
-            "is_stego": analysis_result.get("is_stego", False),
-            "confidence": analysis_result.get("confidence", 0.0),
-            "threat_level": analysis_result.get("threat_level", "none"),
-            "detection_methods": {
-                "engines": analysis_result.get("engine_results", []),
-                "methods_triggered": analysis_result.get("detection_methods", []),
-            },
-            "metadata": {
-                "ensemble_score": analysis_result.get("ensemble_score", 0.0),
-                "threshold": analysis_result.get("threshold", 0.65),
-                "image_info": analysis_result.get("image_info", {}),
-            },
-        }
-
-        result_response = service_client.table("scan_results").insert(result_data).execute()
-
-    except Exception as e:
-        # Non-fatal: results not stored but we still return them
-        print(f"Warning: Could not store scan results: {e}")
-
-    # --- Step 4: Update scan_job status ---
-    try:
-        service_client.table("scan_jobs").update({
-            "status": "completed",
-            "completed_at": "now()",
-        }).eq("id", scan_job_id).execute()
-    except Exception as e:
-        print(f"Warning: Could not update scan job status: {e}")
-
-    # --- Return full response ---
+    # Return instantly — the frontend will track progress via WebSocket
     return {
-        "status": "completed",
+        "status": "analyzing",
         "scan_job_id": scan_job_id,
         "file_name": file.filename,
         "file_hash": file_hash,
         "file_size": len(file_bytes),
-        "analysis": analysis_result,
+        "message": "Scan queued. Track progress via WebSocket.",
     }
 
 
@@ -328,3 +367,57 @@ async def extract_payload(
             return response.json()
     except httpx.ConnectError:
         raise HTTPException(status_code=503, detail="Image Analysis Service is offline.")
+
+
+@router.get("/extract/{job_id}")
+async def extract_payload_by_job(
+    job_id: str,
+    user_id: str = Depends(verify_token),
+):
+    """
+    Extract LSB payload from an already-scanned image. 
+    Fetches the original file from MinIO by job_id, forwards it 
+    to the Image Analysis Service extraction engine. No re-upload needed.
+    """
+    try:
+        # Verify job belongs to user
+        job_response = service_client.table("scan_jobs") \
+            .select("file_name, mime_type") \
+            .eq("id", job_id) \
+            .eq("user_id", user_id) \
+            .execute()
+
+        if not job_response.data:
+            raise HTTPException(status_code=404, detail="Scan job not found")
+
+        file_name = job_response.data[0]["file_name"]
+        mime_type = job_response.data[0]["mime_type"] or "application/octet-stream"
+        object_name = f"{job_id}_{file_name}"
+
+        # Fetch file from MinIO
+        file_bytes = download_file_bytes("originals", object_name)
+        if not file_bytes:
+            raise HTTPException(status_code=404, detail="Original file not found in storage.")
+
+        # Forward to Image Analysis Service for extraction
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{settings.IMAGE_ANALYSIS_URL}/api/extract-lsb",
+                files={"file": (file_name, file_bytes, mime_type)},
+            )
+
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Extraction engine error: {response.text}",
+                )
+
+            return response.json()
+
+    except HTTPException:
+        raise
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503, detail="Image Analysis Service is offline.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
