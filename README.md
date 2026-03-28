@@ -1,4 +1,5 @@
 <p align="center">
+  <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Python-3.10+-blue?style=for-the-badge&logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black" />
   <img src="https://img.shields.io/badge/FastAPI-0.104+-009688?style=for-the-badge&logo=fastapi&logoColor=white" />
@@ -432,7 +433,7 @@ The **final score** uses a True-Positive Max Confidence strategy — instead of 
 
 ## 📄 License
 
-This project is part of an academic research initiative. See the repository for license details.
+This project is licensed under the **MIT License** — see the [LICENSE](./LICENSE) file for details.
 
 ---
 
